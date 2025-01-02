@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "camera-calibration-validation"
+version = "0.1.0"
+description = ""
+authors = ["unlclearness <unclearness.dev@gmail.com>"]
+readme = "README.md"
+packages = [{include = "camera_calibration_validation"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fpdf2 = "^2.8.2"
+opencv-python = "^4.10.0.84"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
