@@ -10,7 +10,7 @@ def initDistortRectifyMap(cameraMatrix, distCoeffs, R, newCameraMatrix, size, m1
     u, v = np.meshgrid(np.arange(w), np.arange(h), indexing="ij")
     src = np.stack([u, v], axis=-1).reshape(-1, 2)
 
-    more_iter = True
+    more_iter = False
     if more_iter:
         dst = cv2.undistortPointsIter(
             src.astype(np.float32),

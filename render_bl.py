@@ -122,30 +122,29 @@ def render_animation(camera, output_dir):
     output_dir = Path(output_dir).absolute()
     output_dir.mkdir(exist_ok=True)
 
-    bpy.context.scene.render.image_settings.file_format = "JPEG"
-    bpy.context.scene.render.image_settings.quality = 90
+    bpy.context.scene.render.image_settings.file_format = "PNG"
+    #bpy.context.scene.render.image_settings.quality = 90
 
     camera_parameters = []
 
     for frame in range(bpy.context.scene.frame_start, bpy.context.scene.frame_end + 1):
         bpy.context.scene.frame_set(frame)
 
-        output_path = str(output_dir / f"frame_{frame:04d}_nodist.jpg")
+        output_path = str(output_dir / f"frame_{frame:04d}_nodist.png")
         bpy.context.scene.render.filepath = output_path
 
         print(f"Rendering frame {frame}...")
         bpy.ops.render.render(write_still=True)
 
         cam2world_gl = camera.matrix_world
-        cam2world_cv = cam2world_gl.copy()
+        cam2world_cv = np.array(cam2world_gl.copy()) 
 
         # Flip y and z axes to align with OpenCV coordinate system
-        cam2world_cv[1] = -cam2world_cv[1]
-        cam2world_cv[2] = -cam2world_cv[2]
+        cam2world_cv[..., 1] = -cam2world_cv[..., 1]
+        cam2world_cv[..., 2] = -cam2world_cv[..., 2]
 
         K = get_intrinsics_as_K_matrix()
         fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
-        # print(fx, fy, cx, cy)
 
         # Save camera parameters
         camera_parameters.append(
@@ -182,7 +181,7 @@ def create_camera_calibration_animation(
     camera.location = Vector((0, 0, 0))
     camera.rotation_euler = Euler((0, 0, 0))
 
-    offset = max(size) * 0.1
+    offset = max(size) * 0.25
     left = view_frustum[4][0] + size[0] / 2 + offset
     right = view_frustum[5][0] - size[0] / 2 - offset
     top = view_frustum[6][1] + size[1] / 2 + offset
@@ -192,7 +191,7 @@ def create_camera_calibration_animation(
         x = left + (right - left) * row / (rows - 1)
         for col in range(cols):
             y = bottom + (top - bottom) * col / (cols - 1)
-            z = cam_z
+            z = - cam_z
             x += random.uniform(-trans_noise_stddev, trans_noise_stddev)
             y += random.uniform(-trans_noise_stddev, trans_noise_stddev)
             z += random.uniform(-trans_noise_stddev, trans_noise_stddev)
@@ -200,12 +199,13 @@ def create_camera_calibration_animation(
             frame = row * cols + col
             bpy.context.scene.frame_set(frame)
 
+            base_rx = np.pi
             rx = random.uniform(-rot_noise_stddev, rot_noise_stddev)
             ry = random.uniform(-rot_noise_stddev, rot_noise_stddev)
             rz = random.uniform(-rot_noise_stddev, rot_noise_stddev)
 
             camera.location = Vector((x, y, z))
-            camera.rotation_euler = Euler((rx, ry, rz))
+            camera.rotation_euler = Euler((rx + base_rx, ry, rz))
 
             camera.keyframe_insert(data_path="location")
             camera.keyframe_insert(data_path="rotation_euler")
@@ -252,7 +252,7 @@ def main(board_obj_path, intrin_json_path, output_dir):
             max(c[2] for c in bbox_corners),
         )
     )
-    # center = (min_corner + max_corner) / 2
+    center = (min_corner + max_corner) / 2
     size = max_corner - min_corner
 
     # Calculate camera distance
@@ -261,6 +261,8 @@ def main(board_obj_path, intrin_json_path, output_dir):
 
     # Create camera pose animation
     view_frustum = compute_view_frustum(fx, fy, cx, cy, width, height, 0.01, cam_z)
+    view_frustum[..., 0] += center[0]
+    view_frustum[..., 1] += center[1]
 
     create_camera_calibration_animation(camera, size, cam_z, view_frustum)
 

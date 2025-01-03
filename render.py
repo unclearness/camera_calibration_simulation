@@ -5,11 +5,14 @@ import shutil
 import re
 import argparse
 import json
+import matplotlib.pyplot as plt
+import numpy as np
 
 import cv2
 import numpy as np
 
-from postprocess import apply_distortion
+from postprocess import distort
+
 
 def find_blender_path():
     system = platform.system()
@@ -58,6 +61,43 @@ def find_blender_path():
     )
 
 
+def colorize(values, min_value, max_value, colormap="bwr"):
+    values = values.astype(float)
+    h, w = values.shape[:2]
+    if len(values.shape) > 2:
+        values = values[..., 0]
+
+    # Ensure values are within the range
+    values = np.clip(values, min_value, max_value)
+
+    # Normalize the values to 0-1
+    normalized = (values - min_value) / (max_value - min_value)
+
+    # Get the colormap
+    cmap = plt.get_cmap(colormap)
+
+    # Map the normalized values to colors
+    colors = cmap(normalized.ravel())
+    # Return the RGB components (first three elements of the tuple) for each value
+    return (colors[:, :3].reshape(h, w, 3) * 255).astype("uint8")
+
+
+def load_obj_points(obj_path):
+    with open(obj_path, "r") as obj_file:
+        lines = obj_file.readlines()
+
+    points = []
+    for line in lines:
+        if line.startswith("v "):
+            splitted = line.split()
+            x = splitted[1]
+            y = splitted[2]
+            z = splitted[3]
+            points.append([float(x), float(y), float(z)])
+
+    return np.array(points)
+
+
 def main(
     blender_path,
     output_dir,
@@ -75,11 +115,9 @@ def main(
     else:
         blender_path = os.path.abspath(blender_path)
 
-    #blender_path = "C:\\Program Files\\Blender Foundation\\Blender 3.6\\blender.exe"
-
     # Ensure output directory exists
     if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
 
     # Command to run Blender with the script
     command = [
@@ -94,7 +132,7 @@ def main(
     ]
 
     # Run the command
-    #subprocess.run(command)
+    subprocess.run(command)
 
     # Setup camera intrinsics with distortion
     with open(intrin_json_path, "r") as json_file:
@@ -114,18 +152,97 @@ def main(
         k5 = float(intrin.get("k5", 0.0))
         k6 = float(intrin.get("k6", 0.0))
 
+    vis_dir = os.path.join(output_dir, "visualize")
+    if not os.path.exists(vis_dir):
+        os.makedirs(vis_dir, exist_ok=True)
+
+    with open(os.path.join(output_dir, "camera_parameters.json"), "r") as json_file:
+        camera_params = json.load(json_file)
+
+    corners_path = obj_path.replace(".obj", "_corners.obj")
+    centers_path = obj_path.replace(".obj", "_marker_centers.obj")
+    edges_path = obj_path.replace(".obj", "_marker_edges.obj")
+
+    corner_points = load_obj_points(corners_path)
+    center_points = load_obj_points(centers_path)
+    edge_points = load_obj_points(edges_path)
+    gt_image_points = []
+
     # Load rendered image
     for filename in os.listdir(output_dir):
-        if filename.endswith("_nodist.jpg"):
-            img = cv2.imread(os.path.join(output_dir, filename), -1)
+        if filename.endswith("_nodist.png"):
+            img = cv2.imread(os.path.join(output_dir, filename))
+
+            K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+            dist_coeffs = np.array([k1, k2, p1, p2, k3, k4, k5, k6])
+
+            camera_param = None
+            for param in camera_params:
+                if param["image"] == filename:
+                    camera_param = param
+                    break
+            cam2world_cv = np.array(camera_param["cam2world_cv"])
+            world2cam_cv = np.linalg.inv(cam2world_cv)
+            tvec = world2cam_cv[:3, 3]
+            rvec, _ = cv2.Rodrigues(world2cam_cv[:3, :3])
+
+            corner_img_points, _ = cv2.projectPoints(
+                corner_points, rvec, tvec, K, dist_coeffs
+            )
+            center_img_points, _ = cv2.projectPoints(
+                center_points, rvec, tvec, K, dist_coeffs
+            )
+            edge_img_points, _ = cv2.projectPoints(
+                edge_points, rvec, tvec, K, dist_coeffs
+            )
+
+            gt_image_points.append(
+                {
+                    "corners": corner_img_points.tolist(),
+                    "centers": center_img_points.tolist(),
+                    "edges": edge_img_points.tolist(),
+                }
+            )
 
             # Apply distortion
-            img_distorted = apply_distortion(
-                img, fx, fy, cx, cy, width, height, k1, k2, p1, p2, k3, k4, k5, k6
-            )
+            img_distorted = distort(img, K, dist_coeffs)
+
             # Save distorted image
-            filename = filename.replace("_nodist.jpg", ".jpg")
+            filename = filename.replace("_nodist.png", ".png")
             cv2.imwrite(os.path.join(output_dir, filename), img_distorted)
+
+            # Draw points on distorted image
+            img_distorted_vis = img_distorted.copy()
+            for point in corner_img_points:
+                cv2.circle(
+                    img_distorted_vis, tuple(point.ravel().astype(int)), 5, (255, 0, 0), -1
+                )
+            for point in edge_img_points:
+                cv2.circle(
+                    img_distorted_vis, tuple(point.ravel().astype(int)), 5, (0, 255, 0), -1
+                )
+            for point in center_img_points:
+                cv2.circle(
+                    img_distorted_vis, tuple(point.ravel().astype(int)), 5, (0, 0, 255), -1
+                )
+
+            # Undistort the image and save
+            img_undistorted_vis = cv2.undistort(img_distorted_vis, K, dist_coeffs)
+            cv2.imwrite(os.path.join(vis_dir, filename), img_undistorted_vis)
+
+            img_undistorted = cv2.undistort(img_distorted, K, dist_coeffs)
+            diff = img_undistorted.astype(float) - img.astype(float)
+            color = colorize(diff, -30, 30)
+            cv2.imwrite(
+                os.path.join(vis_dir, filename.replace(".png", "_diff.png")), color
+            )
+
+            # diff = (img_distorted.astype(float) - img.astype(float))
+            # color = colorize(diff, -30, 30)
+            # cv2.imwrite(os.path.join(vis_dir, filename.replace(".png", "_distdiff.png")), color)
+            #
+    with open(os.path.join(output_dir, "image_points.json"), "w") as json_file:
+        json.dump(gt_image_points, json_file, indent=4)
 
 
 if __name__ == "__main__":
