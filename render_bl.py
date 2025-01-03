@@ -164,11 +164,33 @@ def render_animation(camera, output_dir):
     print("Rendering completed!")
 
 
+def look_at(obj, target, up):
+    R = mathutils.Matrix.Identity(3)
+    direction = obj.location - target
+    direction.normalize()
+    R[0][2] = direction.x
+    R[1][2] = direction.y
+    R[2][2] = direction.z
+
+    right = up.cross(direction).normalized()
+    R[0][0] = right.x
+    R[1][0] = right.y
+    R[2][0] = right.z
+
+    new_up = right.cross(direction).normalized()
+    R[0][1] = new_up.x
+    R[1][1] = new_up.y
+    R[2][1] = new_up.z
+
+    obj.rotation_euler = R.to_euler()
+
+
 def create_camera_calibration_animation(
     camera,
     size,
     cam_z,
     view_frustum,
+    obj,
     rows=10,
     cols=5,
     trans_noise_stddev=0.0,
@@ -187,6 +209,23 @@ def create_camera_calibration_animation(
     top = view_frustum[6][1] + size[1] / 2 + offset
     bottom = view_frustum[5][1] - size[1] / 2 - offset
 
+    rot_noise_stddev = np.pi / 180 * 5
+
+    center = (left + right) / 2, (top + bottom) / 2, -cam_z
+
+   # Accumulate vertex coordinates
+    centroid = mathutils.Vector((0.0, 0.0, 0.0))
+    for vert in obj.data.vertices:
+        centroid += vert.co
+    
+    # Calculate the average
+    centroid /= len(obj.data.vertices)
+    
+    # Convert to world coordinates
+    world_centroid = obj.matrix_world @ centroid
+
+    random.seed(0)
+
     for row in range(rows):
         x = left + (right - left) * row / (rows - 1)
         for col in range(cols):
@@ -200,16 +239,36 @@ def create_camera_calibration_animation(
             bpy.context.scene.frame_set(frame)
 
             base_rx = np.pi
-            rx = random.uniform(-rot_noise_stddev, rot_noise_stddev)
-            ry = random.uniform(-rot_noise_stddev, rot_noise_stddev)
+            rx = random.uniform(-rot_noise_stddev*10, rot_noise_stddev*10)
+            ry = random.uniform(-rot_noise_stddev*5, rot_noise_stddev*5)
             rz = random.uniform(-rot_noise_stddev, rot_noise_stddev)
+            # import math
+            # rx = math.radians(45)
+            # ry = 0
+            # rz = 0
 
-            camera.location = Vector((x, y, z))
-            camera.rotation_euler = Euler((rx + base_rx, ry, rz))
+            if False:
+                camera.location = Vector((x, y, z))
+                camera.rotation_euler = Euler((rx + base_rx, ry, rz))
+            else:
+                #r = np.abs(cam_z)
+                camera.location = Vector((x, y, z))
+                #print("org", camera.location)
+
+                R = np.array(Euler((rx, ry, rz)).to_matrix())
+                
+                new_camera_rotation = R.T @ np.array(Euler((base_rx, 0, 0)).to_matrix())
+                
+                new_camera_pos = np.dot(R.T, (np.array(camera.location) - np.array(world_centroid))) + np.array(world_centroid)
+
+                camera.location = Vector(new_camera_pos)
+                rx, ry, rz = Matrix(new_camera_rotation).to_euler()
+                camera.rotation_euler = Euler((rx, ry, rz))
+                #print("new", camera.location, camera.rotation_euler)
+                #print()
 
             camera.keyframe_insert(data_path="location")
             camera.keyframe_insert(data_path="rotation_euler")
-
 
 def main(board_obj_path, intrin_json_path, output_dir):
 
@@ -264,7 +323,7 @@ def main(board_obj_path, intrin_json_path, output_dir):
     view_frustum[..., 0] += center[0]
     view_frustum[..., 1] += center[1]
 
-    create_camera_calibration_animation(camera, size, cam_z, view_frustum)
+    create_camera_calibration_animation(camera, size, cam_z, view_frustum, obj)
 
     render_animation(camera, output_dir)
 

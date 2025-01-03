@@ -196,6 +196,10 @@ def main(
                 edge_points, rvec, tvec, K, dist_coeffs
             )
 
+            corner_img_points = corner_img_points.squeeze()
+            center_img_points = center_img_points.squeeze()
+            edge_img_points = edge_img_points.squeeze()
+            
             gt_image_points.append(
                 {
                     "corners": corner_img_points.tolist(),
