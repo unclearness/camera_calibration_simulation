@@ -1,7 +1,7 @@
 import cv2
 from pathlib import Path
 import numpy as np
-
+import json
 
 def compute_tex_size(img_size, marker_num, marker_len):
     marker_per_pix_x = img_size[0] / marker_num[0]
@@ -110,6 +110,17 @@ if __name__ == "__main__":
     marker_len = 9.0
     size = (11, 8)
     board = cv2.aruco.CharucoBoard(size, square_len, marker_len, aruco_dict)
+
+    with open("./data/charuco.json", "w") as fp:
+        json.dump(
+            {
+                "dict": "DICT_4X4_100",
+                "square_len": square_len,
+                "marker_len": marker_len,
+                "size": size,
+            },
+            fp,
+        )
 
     # img = board.generateImage((int(square_len*11), int(square_len*8)), marginSize=0, borderBits=1)
 

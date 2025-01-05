@@ -199,14 +199,6 @@ def main(
             corner_img_points = corner_img_points.squeeze()
             center_img_points = center_img_points.squeeze()
             edge_img_points = edge_img_points.squeeze()
-            
-            gt_image_points.append(
-                {
-                    "corners": corner_img_points.tolist(),
-                    "centers": center_img_points.tolist(),
-                    "edges": edge_img_points.tolist(),
-                }
-            )
 
             # Apply distortion
             img_distorted = distort(img, K, dist_coeffs)
@@ -214,6 +206,15 @@ def main(
             # Save distorted image
             filename = filename.replace("_nodist.png", ".png")
             cv2.imwrite(os.path.join(output_dir, filename), img_distorted)
+
+            gt_image_points.append(
+                {
+                    "image": filename,
+                    "marker_corners": corner_img_points.tolist(),
+                    "charuco_centers": center_img_points.tolist(),
+                    "charuco_corners": edge_img_points.tolist(),
+                }
+            )
 
             # Draw points on distorted image
             img_distorted_vis = img_distorted.copy()

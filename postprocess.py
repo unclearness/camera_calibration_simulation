@@ -2,6 +2,30 @@ import cv2
 import numpy as np
 
 
+def distortPoints(src, cameraMatrix, distCoeffs):
+    image_points, jac = cv2.projectPoints(
+        src, np.zeros(3, src.dtype), np.zeros(3, src.dtype), cameraMatrix, distCoeffs
+    )
+    return image_points
+
+
+def distortImagePoints(src, cameraMatrix, distCoeffs):
+    src_homo = np.concatenate(
+        [src, np.ones_like(src[..., 0:1])], dtype=src.dtype, axis=-1
+    )
+    # Bring src points into normalized cooridnate
+    src_homo[..., 0] = (src_homo[..., 0] - cameraMatrix[0][2]) / cameraMatrix[0][0]
+    src_homo[..., 1] = (src_homo[..., 1] - cameraMatrix[1][2]) / cameraMatrix[1][1]
+    return distortPoints(src_homo, cameraMatrix, distCoeffs)
+
+    # cameraMatrix_inv = np.eye(3, 3)
+    # cameraMatrix_inv[0][0] = 1.0 / cameraMatrix[0][0]
+    # cameraMatrix_inv[1][1] = 1.0 / cameraMatrix[1][1]
+    # cameraMatrix_inv[0][2] = -cameraMatrix[0][2] / cameraMatrix[0][0]
+    # cameraMatrix_inv[1][2] = -cameraMatrix[1][2] / cameraMatrix[1][1]
+    # src_homo = (cameraMatrix_inv @ src_homo.T).T
+
+
 def initDistortRectifyMap(cameraMatrix, distCoeffs, R, newCameraMatrix, size, m1type):
     # TODO:
     # Use m1type
@@ -188,7 +212,7 @@ if __name__ == "__main__":
     fy = fx
     cx, cy = img.shape[1] / 2, img.shape[0] / 2
     width, height = img.shape[1], img.shape[0]
-    cameraMatrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+    cameraMatrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float32)
 
     k1 = 0.7
     k2 = -0.5
@@ -199,11 +223,31 @@ if __name__ == "__main__":
     k5 = 0.01
     k6 = 0.01
 
-    distCoeffs = np.array([k1, k2, p1, p2, k3, k4, k5, k6])
+    distCoeffs = np.array([k1, k2, p1, p2, k3, k4, k5, k6], dtype=np.float32)
+
+    test_points = np.array(
+        [
+            [0, 0],
+            [img.shape[0], 0],
+            [0, img.shape[1]],
+            [img.shape[0], img.shape[1]],
+            [cx, cy],
+            [100, 100],
+        ],
+        dtype=np.float32,
+    )
+    distorted = distortImagePoints(test_points, cameraMatrix, distCoeffs)
+    undistorted = cv2.undistortImagePoints(distorted, cameraMatrix, distCoeffs)
+
+    print("Test points:", test_points)
+    print("Distorted:", distorted)
+    print("Undistorted:", undistorted)
+
+    hoge
 
     distorted1 = distort(img, cameraMatrix, distCoeffs)
     cv2.imwrite("distroted1.png", distorted1)
-    
+
     distorted2 = cv2.undistort(img, cameraMatrix, -distCoeffs)
     cv2.imwrite("distroted2.png", distorted2)
 
