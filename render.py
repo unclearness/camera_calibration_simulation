@@ -102,7 +102,7 @@ def main(
     blender_path,
     output_dir,
     obj_path,
-    intrin_json_path,
+    setting_json_path,
     script_path,
 ):
     if blender_path is None:
@@ -127,7 +127,7 @@ def main(
         script_path,  # Path to the Blender Python script
         "--",  # Arguments after '--' are passed to the script
         obj_path,
-        intrin_json_path,
+        setting_json_path,
         output_dir,
     ]
 
@@ -135,8 +135,8 @@ def main(
     subprocess.run(command)
 
     # Setup camera intrinsics with distortion
-    with open(intrin_json_path, "r") as json_file:
-        intrin = json.load(json_file)
+    with open(setting_json_path, "r") as json_file:
+        intrin = json.load(json_file)["intrin"]
         fx = float(intrin["fx"])
         fy = float(intrin["fy"])
         cx = float(intrin["cx"])
@@ -203,6 +203,10 @@ def main(
             # Apply distortion
             img_distorted = distort(img, K, dist_coeffs)
 
+            # Move the original image to visualize directory
+            shutil.move(os.path.join(output_dir, filename),
+                        os.path.join(vis_dir, filename))
+
             # Save distorted image
             filename = filename.replace("_nodist.png", ".png")
             cv2.imwrite(os.path.join(output_dir, filename), img_distorted)
@@ -210,9 +214,9 @@ def main(
             gt_image_points.append(
                 {
                     "image": filename,
-                    "marker_corners": corner_img_points.tolist(),
-                    "charuco_centers": center_img_points.tolist(),
-                    "charuco_corners": edge_img_points.tolist(),
+                    "chessboard_corners": corner_img_points.tolist(),
+                    "marker_centers": center_img_points.tolist(),
+                    "marker_corners": edge_img_points.reshape(-1, 4, 2).tolist(),
                 }
             )
 
@@ -231,9 +235,11 @@ def main(
                     img_distorted_vis, tuple(point.ravel().astype(int)), 5, (0, 0, 255), -1
                 )
 
+            cv2.imwrite(os.path.join(vis_dir, filename.replace(".png", "_dist.png")), img_distorted_vis)
+
             # Undistort the image and save
             img_undistorted_vis = cv2.undistort(img_distorted_vis, K, dist_coeffs)
-            cv2.imwrite(os.path.join(vis_dir, filename), img_undistorted_vis)
+            cv2.imwrite(os.path.join(vis_dir, filename.replace(".png", "_reundist.png")), img_undistorted_vis)
 
             img_undistorted = cv2.undistort(img_distorted, K, dist_coeffs)
             diff = img_undistorted.astype(float) - img.astype(float)
@@ -262,14 +268,14 @@ if __name__ == "__main__":
         default=os.path.abspath(__file__) + "/../render_bl.py",
     )
     parser.add_argument("--obj_path", help="Path to OBJ model file", required=True)
-    parser.add_argument("--intrin_json_path", help="Path to json", required=True)
+    parser.add_argument("--setting_json_path", help="Path to json", required=True)
     parser.add_argument("--output_dir", help="Output directory", required=True)
 
     args = parser.parse_args()
     blender_path = args.blender_path
     output_dir = os.path.abspath(args.output_dir)
     obj_path = os.path.abspath(args.obj_path)
-    intrin_json_path = os.path.abspath(args.intrin_json_path)
+    setting_json_path = os.path.abspath(args.setting_json_path)
     script_path = args.script_path
 
-    main(blender_path, output_dir, obj_path, intrin_json_path, script_path)
+    main(blender_path, output_dir, obj_path, setting_json_path, script_path)

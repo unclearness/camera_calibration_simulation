@@ -14,9 +14,6 @@ def distortImagePoints(src, cameraMatrix, distCoeffs):
         [src, np.ones_like(src[..., 0:1])], dtype=src.dtype, axis=-1
     )
     # Bring src points into normalized cooridnate
-    src_homo[..., 0] = (src_homo[..., 0] - cameraMatrix[0][2]) / cameraMatrix[0][0]
-    src_homo[..., 1] = (src_homo[..., 1] - cameraMatrix[1][2]) / cameraMatrix[1][1]
-    return distortPoints(src_homo, cameraMatrix, distCoeffs)
 
     # cameraMatrix_inv = np.eye(3, 3)
     # cameraMatrix_inv[0][0] = 1.0 / cameraMatrix[0][0]
@@ -24,6 +21,10 @@ def distortImagePoints(src, cameraMatrix, distCoeffs):
     # cameraMatrix_inv[0][2] = -cameraMatrix[0][2] / cameraMatrix[0][0]
     # cameraMatrix_inv[1][2] = -cameraMatrix[1][2] / cameraMatrix[1][1]
     # src_homo = (cameraMatrix_inv @ src_homo.T).T
+
+    src_homo[..., 0] = (src_homo[..., 0] - cameraMatrix[0][2]) / cameraMatrix[0][0]
+    src_homo[..., 1] = (src_homo[..., 1] - cameraMatrix[1][2]) / cameraMatrix[1][1]
+    return distortPoints(src_homo, cameraMatrix, distCoeffs)
 
 
 def initDistortRectifyMap(cameraMatrix, distCoeffs, R, newCameraMatrix, size, m1type):

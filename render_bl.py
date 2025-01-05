@@ -193,8 +193,9 @@ def create_camera_calibration_animation(
     obj,
     rows=10,
     cols=5,
-    trans_noise_stddev=0.0,
-    rot_noise_stddev=0.0,
+    rot_noise_stddev_deg=0.0,
+    trans_noise_stddev_ratio=0.0,
+    random_seed=-1
 ):
     num_frames = rows * cols
     bpy.context.scene.frame_start = 0
@@ -209,7 +210,9 @@ def create_camera_calibration_animation(
     top = view_frustum[6][1] + size[1] / 2 + offset
     bottom = view_frustum[5][1] - size[1] / 2 - offset
 
-    rot_noise_stddev = np.pi / 180 * 5
+    rot_noise_stddev = np.pi / 180 * rot_noise_stddev_deg
+
+    trans_noise_stddev = trans_noise_stddev_ratio * size
 
     center = (left + right) / 2, (top + bottom) / 2, -cam_z
 
@@ -224,16 +227,17 @@ def create_camera_calibration_animation(
     # Convert to world coordinates
     world_centroid = obj.matrix_world @ centroid
 
-    random.seed(0)
+    if random_seed >= 0:
+        random.seed(random_seed)
 
     for row in range(rows):
         x = left + (right - left) * row / (rows - 1)
         for col in range(cols):
             y = bottom + (top - bottom) * col / (cols - 1)
             z = - cam_z
-            x += random.uniform(-trans_noise_stddev, trans_noise_stddev)
-            y += random.uniform(-trans_noise_stddev, trans_noise_stddev)
-            z += random.uniform(-trans_noise_stddev, trans_noise_stddev)
+            x += random.uniform(-trans_noise_stddev[0], trans_noise_stddev[0])
+            y += random.uniform(-trans_noise_stddev[1], trans_noise_stddev[1])
+            z += random.uniform(-trans_noise_stddev[2], trans_noise_stddev[2])
 
             frame = row * cols + col
             bpy.context.scene.frame_set(frame)
@@ -270,13 +274,15 @@ def create_camera_calibration_animation(
             camera.keyframe_insert(data_path="location")
             camera.keyframe_insert(data_path="rotation_euler")
 
-def main(board_obj_path, intrin_json_path, output_dir):
+
+def main(board_obj_path, setting_json_path, output_dir):
 
     setup_scene()
 
     # Setup camera intrinsics EXCEPT distortion
-    with open(intrin_json_path, "r") as json_file:
-        intrin = json.load(json_file)
+    with open(setting_json_path, "r") as json_file:
+        setting = json.load(json_file)
+        intrin = setting["intrin"]
         fx = float(intrin["fx"])
         fy = float(intrin["fy"])
         cx = float(intrin["cx"])
@@ -323,7 +329,16 @@ def main(board_obj_path, intrin_json_path, output_dir):
     view_frustum[..., 0] += center[0]
     view_frustum[..., 1] += center[1]
 
-    create_camera_calibration_animation(camera, size, cam_z, view_frustum, obj)
+    extrin = setting["extrin"]
+    rows = int(extrin["rows"])
+    cols = int(extrin["cols"])
+    rot_noise_stddev_deg = float(extrin["rot_noise_stddev_deg"])
+    trans_noise_stddev_ratio = float(extrin["trans_noise_stddev_ratio"])
+    random_seed = int(extrin.get("random_seed", -1))
+    create_camera_calibration_animation(camera, size, cam_z, view_frustum, obj,
+                                        rows, cols, rot_noise_stddev_deg,
+                                        trans_noise_stddev_ratio,
+                                        random_seed)
 
     render_animation(camera, output_dir)
 
@@ -340,7 +355,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     board_obj_path = argv[0]
-    intrin_json_path = argv[1]
+    setting_json_path = argv[1]
     output_dir = argv[2]
 
-    main(board_obj_path, intrin_json_path, output_dir)
+    main(board_obj_path, setting_json_path, output_dir)
